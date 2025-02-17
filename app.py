@@ -4,6 +4,7 @@ import plotly.express as px
 from utils.data_processor import DataProcessor
 from utils.forecasting import Forecaster
 from utils.visualizations import Visualizer
+from utils.scenario_comparison import ScenarioManager
 
 def main():
     st.set_page_config(
@@ -17,6 +18,10 @@ def main():
     This application helps you analyze and forecast demand patterns using various statistical methods.
     Upload your time series data and explore different forecasting models, including advanced options like ARIMA and Prophet.
     """)
+
+    # Initialize session state for scenario management
+    if 'scenario_manager' not in st.session_state:
+        st.session_state.scenario_manager = ScenarioManager()
 
     # Data Loading Options
     data_option = st.radio(
@@ -48,11 +53,11 @@ def main():
             with col1:
                 date_column = st.selectbox("Select Date Column", df.columns)
                 target_column = st.selectbox("Select Target Column (Values to Forecast)", 
-                                          df.select_dtypes(include=['float64', 'int64']).columns)
+                                         df.select_dtypes(include=['float64', 'int64']).columns)
 
             with col2:
                 handle_missing = st.selectbox("Handle Missing Values", 
-                                           ["Forward Fill", "Backward Fill", "Linear Interpolation"])
+                                          ["Forward Fill", "Backward Fill", "Linear Interpolation"])
 
             # Process data based on selections
             processed_df = data_processor.preprocess_data(df, date_column, target_column, handle_missing)
@@ -68,77 +73,102 @@ def main():
             use_feature_selection = st.checkbox("Enable Automated Feature Selection", value=True)
 
             # Forecasting
-            st.subheader("Forecasting")
-            col1, col2 = st.columns(2)
+            st.subheader("Scenario Management")
 
-            with col1:
-                model_type = st.selectbox("Select Forecasting Model", 
-                                       ["Moving Average", "Exponential Smoothing", "ARIMA", "Prophet"])
-                forecast_periods = st.number_input("Forecast Periods", min_value=1, value=30)
+            # Scenario creation
+            with st.expander("Create New Forecast Scenario", expanded=True):
+                col1, col2 = st.columns(2)
 
-            with col2:
-                # Model-specific parameters
-                if model_type == "Moving Average":
-                    window_size = st.slider("Window Size", min_value=1, max_value=30, value=7)
-                    params = {"window_size": window_size}
-                elif model_type == "Exponential Smoothing":
-                    alpha = st.slider("Smoothing Factor (α)", min_value=0.0, max_value=1.0, value=0.3)
-                    params = {"alpha": alpha}
-                elif model_type == "ARIMA":
-                    p = st.slider("AR Order (p)", min_value=0, max_value=5, value=1)
-                    d = st.slider("Differencing Order (d)", min_value=0, max_value=2, value=1)
-                    q = st.slider("MA Order (q)", min_value=0, max_value=5, value=1)
-                    params = {"p": p, "d": d, "q": q}
-                elif model_type == "Prophet":
-                    st.info("Prophet uses automatic parameter optimization")
-                    params = {}
+                with col1:
+                    scenario_name = st.text_input("Scenario Name", 
+                                                value=f"Scenario {len(st.session_state.scenario_manager.get_scenario_names()) + 1}")
+                    model_type = st.selectbox("Select Forecasting Model", 
+                                          ["Moving Average", "Exponential Smoothing", "ARIMA", "Prophet"],
+                                          key="model_type")
+                    forecast_periods = st.number_input("Forecast Periods", min_value=1, value=30,
+                                                     key="forecast_periods")
 
-            # Generate forecast
-            if st.button("Generate Forecast"):
-                with st.spinner("Generating forecast..."):
-                    forecaster = Forecaster()
-                    forecast_df, metrics = forecaster.generate_forecast(
-                        processed_df, 
-                        date_column, 
-                        target_column, 
-                        model_type,
-                        forecast_periods,
-                        use_feature_selection=use_feature_selection,
-                        **params
+                with col2:
+                    # Model-specific parameters
+                    if model_type == "Moving Average":
+                        window_size = st.slider("Window Size", min_value=1, max_value=30, value=7,
+                                              key="window_size")
+                        params = {"window_size": window_size}
+                    elif model_type == "Exponential Smoothing":
+                        alpha = st.slider("Smoothing Factor (α)", min_value=0.0, max_value=1.0, value=0.3,
+                                        key="alpha")
+                        params = {"alpha": alpha}
+                    elif model_type == "ARIMA":
+                        p = st.slider("AR Order (p)", min_value=0, max_value=5, value=1, key="p")
+                        d = st.slider("Differencing Order (d)", min_value=0, max_value=2, value=1, key="d")
+                        q = st.slider("MA Order (q)", min_value=0, max_value=5, value=1, key="q")
+                        params = {"p": p, "d": d, "q": q}
+                    elif model_type == "Prophet":
+                        st.info("Prophet uses automatic parameter optimization")
+                        params = {}
+
+                # Generate forecast for scenario
+                if st.button("Add Scenario"):
+                    with st.spinner(f"Generating forecast for {scenario_name}..."):
+                        forecaster = Forecaster()
+                        forecast_df, metrics = forecaster.generate_forecast(
+                            processed_df, 
+                            date_column, 
+                            target_column, 
+                            model_type,
+                            forecast_periods,
+                            use_feature_selection=use_feature_selection,
+                            **params
+                        )
+
+                        # Add scenario to manager
+                        st.session_state.scenario_manager.add_scenario(
+                            scenario_name,
+                            model_type,
+                            params,
+                            forecast_df,
+                            metrics
+                        )
+                        st.success(f"Added scenario: {scenario_name}")
+
+            # Scenario Comparison
+            if st.session_state.scenario_manager.get_scenario_names():
+                st.subheader("Compare Scenarios")
+
+                # Select scenarios to compare
+                selected_scenarios = st.multiselect(
+                    "Select scenarios to compare",
+                    st.session_state.scenario_manager.get_scenario_names(),
+                    default=st.session_state.scenario_manager.get_scenario_names()
+                )
+
+                if selected_scenarios:
+                    # Plot comparison
+                    fig = st.session_state.scenario_manager.plot_comparison(
+                        processed_df,
+                        date_column,
+                        target_column,
+                        selected_scenarios
                     )
-
-                    # Display forecast results
-                    st.subheader("Forecast Results")
-                    fig = visualizer.plot_forecast(processed_df, forecast_df, date_column, target_column)
                     st.plotly_chart(fig, use_container_width=True)
 
-                    # Display metrics and feature importance
-                    st.subheader("Model Performance and Feature Analysis")
-
-                    # Display performance metrics
-                    metrics_df = pd.DataFrame({k: [v] for k, v in metrics.items() 
-                                            if k not in ['Selected Features', 'Feature Importance']})
+                    # Display metrics comparison
+                    st.subheader("Metrics Comparison")
+                    metrics_df = st.session_state.scenario_manager.compare_metrics()
                     st.dataframe(metrics_df)
-
-                    # Display feature importance if available
-                    if use_feature_selection and 'Selected Features' in metrics:
-                        st.subheader("Feature Analysis")
-                        st.write("Selected Features:", metrics['Selected Features'])
-
-                        if 'Feature Importance' in metrics:
-                            importance_df = pd.DataFrame(metrics['Feature Importance'])
-                            st.write("Feature Importance Scores:")
-                            fig = px.bar(importance_df, x='feature', y='importance',
-                                       title='Feature Importance Scores')
-                            st.plotly_chart(fig, use_container_width=True)
 
                     # Download results
                     st.download_button(
-                        label="Download Forecast Results",
-                        data=forecast_df.to_csv(index=False),
-                        file_name="forecast_results.csv",
+                        label="Download Comparison Results",
+                        data=metrics_df.to_csv(index=False),
+                        file_name="forecast_comparison.csv",
                         mime="text/csv"
                     )
+
+                # Option to clear scenarios
+                if st.button("Clear All Scenarios"):
+                    st.session_state.scenario_manager.clear_scenarios()
+                    st.success("All scenarios cleared")
 
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
