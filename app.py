@@ -63,6 +63,10 @@ def main():
             fig = visualizer.plot_time_series(processed_df, date_column, target_column)
             st.plotly_chart(fig, use_container_width=True)
 
+            # Feature Selection Options
+            st.subheader("Feature Engineering")
+            use_feature_selection = st.checkbox("Enable Automated Feature Selection", value=True)
+
             # Forecasting
             st.subheader("Forecasting")
             col1, col2 = st.columns(2)
@@ -99,6 +103,7 @@ def main():
                         target_column, 
                         model_type,
                         forecast_periods,
+                        use_feature_selection=use_feature_selection,
                         **params
                     )
 
@@ -107,10 +112,25 @@ def main():
                     fig = visualizer.plot_forecast(processed_df, forecast_df, date_column, target_column)
                     st.plotly_chart(fig, use_container_width=True)
 
-                    # Display metrics
-                    st.subheader("Model Performance Metrics")
-                    metrics_df = pd.DataFrame(metrics, index=[0])
+                    # Display metrics and feature importance
+                    st.subheader("Model Performance and Feature Analysis")
+
+                    # Display performance metrics
+                    metrics_df = pd.DataFrame({k: [v] for k, v in metrics.items() 
+                                            if k not in ['Selected Features', 'Feature Importance']})
                     st.dataframe(metrics_df)
+
+                    # Display feature importance if available
+                    if use_feature_selection and 'Selected Features' in metrics:
+                        st.subheader("Feature Analysis")
+                        st.write("Selected Features:", metrics['Selected Features'])
+
+                        if 'Feature Importance' in metrics:
+                            importance_df = pd.DataFrame(metrics['Feature Importance'])
+                            st.write("Feature Importance Scores:")
+                            fig = px.bar(importance_df, x='feature', y='importance',
+                                       title='Feature Importance Scores')
+                            st.plotly_chart(fig, use_container_width=True)
 
                     # Download results
                     st.download_button(

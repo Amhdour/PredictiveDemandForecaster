@@ -4,6 +4,7 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from prophet import Prophet
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from .feature_engineering import FeatureEngineer
 
 class Forecaster:
     def calculate_metrics(self, actual, predicted):
@@ -35,13 +36,19 @@ class Forecaster:
         fitted_model = model.fit(disp=False)
         return fitted_model
 
-    def prophet_model(self, df, date_column, target_column):
-        """Apply Prophet model"""
+    def prophet_model(self, df, date_column, target_column, selected_features=None):
+        """Apply Prophet model with additional regressors"""
         # Prepare data for Prophet
         prophet_df = pd.DataFrame({
             'ds': df[date_column],
             'y': df[target_column]
         })
+
+        # Add selected features as regressors
+        if selected_features:
+            for feature in selected_features:
+                if feature in df.columns:
+                    prophet_df[feature] = df[feature]
 
         # Initialize and fit Prophet model
         model = Prophet(
@@ -49,19 +56,34 @@ class Forecaster:
             weekly_seasonality=True,
             daily_seasonality=False
         )
+
+        # Add regressors
+        if selected_features:
+            for feature in selected_features:
+                if feature in prophet_df.columns and feature not in ['ds', 'y']:
+                    model.add_regressor(feature)
+
         model.fit(prophet_df)
         return model
 
     def generate_forecast(self, df, date_column, target_column, model_type,
-                         forecast_periods, window_size=None, alpha=None,
-                         p=None, d=None, q=None):
+                         forecast_periods, use_feature_selection=True, **params):
         """Generate forecast based on selected model"""
         try:
+            # Initialize feature engineering if requested
+            if use_feature_selection:
+                feature_engineer = FeatureEngineer(date_column, target_column)
+                enhanced_df, selected_features, importance_scores = feature_engineer.generate_features(df)
+                df = enhanced_df
+            else:
+                selected_features = None
+
             data = df[target_column].values
             dates = df[date_column]
 
             if model_type == "Moving Average":
                 # Generate forecast using moving average
+                window_size = params.get('window_size', 7)
                 ma_values = self.moving_average(df[target_column], window_size)
                 forecast = ma_values.iloc[-forecast_periods:].values
                 train_pred = ma_values[window_size:].values
@@ -69,6 +91,7 @@ class Forecaster:
 
             elif model_type == "Exponential Smoothing":
                 # Generate forecast using exponential smoothing
+                alpha = params.get('alpha', 0.3)
                 model = self.exponential_smoothing(data, alpha)
                 forecast = model.forecast(forecast_periods)
                 train_pred = model.fittedvalues
@@ -76,15 +99,28 @@ class Forecaster:
 
             elif model_type == "ARIMA":
                 # Generate forecast using ARIMA
+                p = params.get('p', 1)
+                d = params.get('d', 1)
+                q = params.get('q', 1)
                 model = self.arima(data, p, d, q)
                 forecast = model.forecast(forecast_periods)
                 train_pred = model.get_prediction(start=0).predicted_mean
                 train_actual = data
 
             elif model_type == "Prophet":
-                # Generate forecast using Prophet
-                model = self.prophet_model(df, date_column, target_column)
+                # Generate forecast using Prophet with selected features
+                model = self.prophet_model(df, date_column, target_column, selected_features)
+
+                # Create future dataframe with features
                 future_dates = model.make_future_dataframe(periods=forecast_periods)
+
+                # Add feature values for future dates if available
+                if selected_features:
+                    for feature in selected_features:
+                        if feature in df.columns and feature not in ['ds', 'y']:
+                            # Use last value for future dates (simple approach)
+                            future_dates[feature] = df[feature].iloc[-1]
+
                 forecast_result = model.predict(future_dates)
 
                 # Extract the forecast values
@@ -105,6 +141,11 @@ class Forecaster:
 
             # Calculate metrics on training data
             metrics = self.calculate_metrics(train_actual, train_pred)
+
+            # Add feature importance information if available
+            if use_feature_selection:
+                metrics['Selected Features'] = ', '.join(selected_features)
+                metrics['Feature Importance'] = importance_scores.to_dict('records')
 
             return forecast_df, metrics
 
