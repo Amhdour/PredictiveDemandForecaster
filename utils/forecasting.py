@@ -162,11 +162,11 @@ class Forecaster:
 
             # Add optimization information if used
             if optimize_parameters:
-                metrics['Optimized Parameters'] = str(params)
+                metrics['Optimized Parameters'] = params  # Store as dictionary, not string
 
             # Add feature importance information if available
-            if use_feature_selection:
-                metrics['Selected Features'] = ', '.join(selected_features)
+            if use_feature_selection and selected_features is not None:
+                metrics['Selected Features'] = selected_features
                 metrics['Feature Importance'] = importance_scores.to_dict('records')
 
             return forecast_df, metrics
