@@ -5,6 +5,7 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from prophet import Prophet
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from .feature_engineering import FeatureEngineer
+from .parameter_optimizer import ParameterOptimizer
 
 class Forecaster:
     def calculate_metrics(self, actual, predicted):
@@ -36,7 +37,7 @@ class Forecaster:
         fitted_model = model.fit(disp=False)
         return fitted_model
 
-    def prophet_model(self, df, date_column, target_column, selected_features=None):
+    def prophet_model(self, df, date_column, target_column, selected_features=None, **params):
         """Apply Prophet model with additional regressors"""
         # Prepare data for Prophet
         prophet_df = pd.DataFrame({
@@ -50,11 +51,13 @@ class Forecaster:
                 if feature in df.columns:
                     prophet_df[feature] = df[feature]
 
-        # Initialize and fit Prophet model
+        # Initialize and fit Prophet model with optimized parameters
         model = Prophet(
             yearly_seasonality=True,
             weekly_seasonality=True,
-            daily_seasonality=False
+            daily_seasonality=False,
+            changepoint_prior_scale=params.get('changepoint_prior_scale', 0.05),
+            seasonality_prior_scale=params.get('seasonality_prior_scale', 10)
         )
 
         # Add regressors
@@ -67,7 +70,8 @@ class Forecaster:
         return model
 
     def generate_forecast(self, df, date_column, target_column, model_type,
-                         forecast_periods, use_feature_selection=True, **params):
+                         forecast_periods, use_feature_selection=True,
+                         optimize_parameters=False, **params):
         """Generate forecast based on selected model"""
         try:
             # Initialize feature engineering if requested
@@ -77,6 +81,19 @@ class Forecaster:
                 df = enhanced_df
             else:
                 selected_features = None
+
+            # Initialize parameter optimization if requested
+            if optimize_parameters:
+                optimizer = ParameterOptimizer(df, date_column, target_column)
+
+                if model_type == "Moving Average":
+                    params = optimizer.optimize_moving_average()
+                elif model_type == "Exponential Smoothing":
+                    params = optimizer.optimize_exponential_smoothing()
+                elif model_type == "ARIMA":
+                    params = optimizer.optimize_arima()
+                elif model_type == "Prophet":
+                    params = optimizer.optimize_prophet()
 
             data = df[target_column].values
             dates = df[date_column]
@@ -109,7 +126,8 @@ class Forecaster:
 
             elif model_type == "Prophet":
                 # Generate forecast using Prophet with selected features
-                model = self.prophet_model(df, date_column, target_column, selected_features)
+                model = self.prophet_model(df, date_column, target_column, 
+                                        selected_features, **params)
 
                 # Create future dataframe with features
                 future_dates = model.make_future_dataframe(periods=forecast_periods)
@@ -141,6 +159,10 @@ class Forecaster:
 
             # Calculate metrics on training data
             metrics = self.calculate_metrics(train_actual, train_pred)
+
+            # Add optimization information if used
+            if optimize_parameters:
+                metrics['Optimized Parameters'] = str(params)
 
             # Add feature importance information if available
             if use_feature_selection:

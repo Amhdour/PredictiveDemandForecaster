@@ -53,11 +53,11 @@ def main():
             with col1:
                 date_column = st.selectbox("Select Date Column", df.columns)
                 target_column = st.selectbox("Select Target Column (Values to Forecast)", 
-                                         df.select_dtypes(include=['float64', 'int64']).columns)
+                                            df.select_dtypes(include=['float64', 'int64']).columns)
 
             with col2:
                 handle_missing = st.selectbox("Handle Missing Values", 
-                                          ["Forward Fill", "Backward Fill", "Linear Interpolation"])
+                                           ["Forward Fill", "Backward Fill", "Linear Interpolation"])
 
             # Process data based on selections
             processed_df = data_processor.preprocess_data(df, date_column, target_column, handle_missing)
@@ -68,11 +68,18 @@ def main():
             fig = visualizer.plot_time_series(processed_df, date_column, target_column)
             st.plotly_chart(fig, use_container_width=True)
 
-            # Feature Selection Options
-            st.subheader("Feature Engineering")
-            use_feature_selection = st.checkbox("Enable Automated Feature Selection", value=True)
+            # Feature Selection and Parameter Optimization Options
+            st.subheader("Advanced Options")
+            col1, col2 = st.columns(2)
 
-            # Forecasting
+            with col1:
+                use_feature_selection = st.checkbox("Enable Automated Feature Selection", value=True)
+
+            with col2:
+                optimize_parameters = st.checkbox("Enable Parameter Optimization", value=False,
+                                               help="Automatically find the best parameters for the selected model")
+
+            # Scenario Management section
             st.subheader("Scenario Management")
 
             # Scenario creation
@@ -89,27 +96,32 @@ def main():
                                                      key="forecast_periods")
 
                 with col2:
-                    # Model-specific parameters
-                    if model_type == "Moving Average":
-                        window_size = st.slider("Window Size", min_value=1, max_value=30, value=7,
-                                              key="window_size")
-                        params = {"window_size": window_size}
-                    elif model_type == "Exponential Smoothing":
-                        alpha = st.slider("Smoothing Factor (α)", min_value=0.0, max_value=1.0, value=0.3,
-                                        key="alpha")
-                        params = {"alpha": alpha}
-                    elif model_type == "ARIMA":
-                        p = st.slider("AR Order (p)", min_value=0, max_value=5, value=1, key="p")
-                        d = st.slider("Differencing Order (d)", min_value=0, max_value=2, value=1, key="d")
-                        q = st.slider("MA Order (q)", min_value=0, max_value=5, value=1, key="q")
-                        params = {"p": p, "d": d, "q": q}
-                    elif model_type == "Prophet":
-                        st.info("Prophet uses automatic parameter optimization")
+                    if not optimize_parameters:
+                        # Model-specific parameters (manual configuration)
+                        if model_type == "Moving Average":
+                            window_size = st.slider("Window Size", min_value=1, max_value=30, value=7,
+                                                  key="window_size")
+                            params = {"window_size": window_size}
+                        elif model_type == "Exponential Smoothing":
+                            alpha = st.slider("Smoothing Factor (α)", min_value=0.0, max_value=1.0, value=0.3,
+                                            key="alpha")
+                            params = {"alpha": alpha}
+                        elif model_type == "ARIMA":
+                            p = st.slider("AR Order (p)", min_value=0, max_value=5, value=1, key="p")
+                            d = st.slider("Differencing Order (d)", min_value=0, max_value=2, value=1, key="d")
+                            q = st.slider("MA Order (q)", min_value=0, max_value=5, value=1, key="q")
+                            params = {"p": p, "d": d, "q": q}
+                        elif model_type == "Prophet":
+                            st.info("Prophet uses automatic parameter optimization")
+                            params = {}
+                    else:
+                        st.info(f"Parameters will be optimized automatically for {model_type} model")
                         params = {}
 
                 # Generate forecast for scenario
                 if st.button("Add Scenario"):
-                    with st.spinner(f"Generating forecast for {scenario_name}..."):
+                    with st.spinner(f"Generating forecast for {scenario_name}..." + 
+                                 (" (Optimizing parameters)" if optimize_parameters else "")):
                         forecaster = Forecaster()
                         forecast_df, metrics = forecaster.generate_forecast(
                             processed_df, 
@@ -118,6 +130,7 @@ def main():
                             model_type,
                             forecast_periods,
                             use_feature_selection=use_feature_selection,
+                            optimize_parameters=optimize_parameters,
                             **params
                         )
 
@@ -125,11 +138,15 @@ def main():
                         st.session_state.scenario_manager.add_scenario(
                             scenario_name,
                             model_type,
-                            params,
+                            metrics.get('Optimized Parameters', params),
                             forecast_df,
                             metrics
                         )
                         st.success(f"Added scenario: {scenario_name}")
+
+                        # Display optimization results if used
+                        if optimize_parameters and 'Optimized Parameters' in metrics:
+                            st.info(f"Optimized parameters: {metrics['Optimized Parameters']}")
 
             # Scenario Comparison
             if st.session_state.scenario_manager.get_scenario_names():
