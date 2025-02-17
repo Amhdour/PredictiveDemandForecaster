@@ -35,9 +35,10 @@ class ParameterOptimizer:
                 ma = pd.Series(y_train).rolling(window=window).mean()
                 # Use last MA value for predictions
                 forecast = np.array([ma.iloc[-1]] * len(y_val))
-                # Calculate error
-                error = mean_squared_error(y_val, forecast, squared=False)
-                errors.append(error)
+                # Calculate error (RMSE)
+                mse = mean_squared_error(y_val, forecast)
+                rmse = np.sqrt(mse)
+                errors.append(rmse)
 
             return np.mean(errors)
 
@@ -72,9 +73,10 @@ class ParameterOptimizer:
                     fitted_model = model.fit(smoothing_level=alpha)
                     # Generate forecast
                     forecast = fitted_model.forecast(len(y_val))
-                    # Calculate error
-                    error = mean_squared_error(y_val, forecast, squared=False)
-                    errors.append(error)
+                    # Calculate error (RMSE)
+                    mse = mean_squared_error(y_val, forecast)
+                    rmse = np.sqrt(mse)
+                    errors.append(rmse)
                 except:
                     return 1e10  # Return large error for failed fits
 
@@ -112,9 +114,10 @@ class ParameterOptimizer:
                     fitted_model = model.fit(disp=False)
                     # Generate forecast
                     forecast = fitted_model.forecast(len(y_val))
-                    # Calculate error
-                    error = mean_squared_error(y_val, forecast, squared=False)
-                    errors.append(error)
+                    # Calculate error (RMSE)
+                    mse = mean_squared_error(y_val, forecast)
+                    rmse = np.sqrt(mse)
+                    errors.append(rmse)
                 except:
                     return 1e10  # Return large error for failed fits
 
@@ -178,9 +181,10 @@ class ParameterOptimizer:
                     future_dates = pd.DataFrame({'ds': val_data[self.date_column]})
                     forecast = model.predict(future_dates)
 
-                    # Calculate error
-                    error = mean_squared_error(val_data[self.target_column], forecast['yhat'], squared=False)
-                    errors.append(error)
+                    # Calculate error (RMSE)
+                    mse = mean_squared_error(val_data[self.target_column], forecast['yhat'])
+                    rmse = np.sqrt(mse)
+                    errors.append(rmse)
                 except:
                     return 1e10  # Return large error for failed fits
 
