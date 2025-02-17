@@ -18,13 +18,23 @@ def main():
     Upload your time series data and explore different forecasting models, including advanced options like ARIMA and Prophet.
     """)
 
-    # File upload
-    uploaded_file = st.file_uploader("Upload your CSV/Excel file", type=['csv', 'xlsx'])
+    # Data Loading Options
+    data_option = st.radio(
+        "Choose data source",
+        ["Upload your own data", "Use sample data"],
+        horizontal=True
+    )
 
-    if uploaded_file is not None:
+    uploaded_file = None
+    if data_option == "Upload your own data":
+        uploaded_file = st.file_uploader("Upload your CSV/Excel file", type=['csv', 'xlsx'])
+
+    # Initialize data processor
+    data_processor = DataProcessor(uploaded_file)
+
+    # Load data based on selection
+    if data_option == "Use sample data" or uploaded_file is not None:
         try:
-            # Data Processing
-            data_processor = DataProcessor(uploaded_file)
             df = data_processor.load_data()
 
             # Data Preview
